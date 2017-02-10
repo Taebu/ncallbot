@@ -84,6 +84,7 @@ public class Env {
 		    Instance.CON_USER = Instance.readEnv(properties,"dbcon_user","");
 		    Instance.CON_PWD = Instance.readEnv(properties,"dbcon_pwd","");
 		    Instance.CLIENT_ID = Instance.readEnv(properties,"client_id","");
+		    
 		    Instance.CLIENT_SECRET = Instance.readEnv(properties,"client_secret","");
 		    Instance.USE_FILTER = "1".equals(Instance.readEnv(properties,"use_filter",""));
 		    
