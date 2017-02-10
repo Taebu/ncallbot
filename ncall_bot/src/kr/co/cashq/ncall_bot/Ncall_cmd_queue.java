@@ -1,12 +1,13 @@
 package kr.co.cashq.ncall_bot;
 
+import static java.lang.Math.toIntExact;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.regex.Pattern;
-import static java.lang.Math.toIntExact;
 
 
 //import com.nostech.safen.SafeNo;
@@ -29,6 +30,7 @@ public class Ncall_cmd_queue {
 		String naver_result="";
 		String ns_result="";
 		String[] ncall_info = new String[5];
+		String[] ncall_log = new String[3];
 		int[] ncall_report = new int[6];
 		
 		int ns_success=0;
@@ -52,12 +54,13 @@ public class Ncall_cmd_queue {
 				* SELECT TIMESTAMPDIFF(DAY,'2009-05-18','2009-07-29');
 				***************************************************/
 				nr_start=System.currentTimeMillis() / 1000;
+				/* 로그 테이블 존재 여부 후 생성 */
+				String hist_table = DBConn.isExistTableYYYYMM();
 				while(dao.rs().next()) 
 				{
 					
 					ns_tel=chkValue(dao.rs().getString("ns_tel"));
 					naver_result=asl.search_naver(ns_tel);
-					//Utils.getLogger().info("message : "+naver_result);
 					naver_result=asl.get_json(naver_result);
 
 					if(!naver_result.equals("0")){
@@ -71,35 +74,23 @@ public class Ncall_cmd_queue {
 					}					
 					NCALL_LOG.heart_beat = 1;
 					
-					//String hist_table = DBConn.isExistTableYYYYMM();
 					ncall_info[0]=ns_result;     
 					ncall_info[1]=dao.rs().getString("ns_stno");
 					/* ncall_sync를 갱신합니다. */
 					set_ncall(ncall_info);
+		
 					/* ncall_log_Ym 을 입력합니다. */
-					//set_ncall(ncall_info);
+					ncall_log[0]=dao.rs().getString("ns_stno");     
+					ncall_log[1]=dao.rs().getString("ns_tel");
+					ncall_log[2]=ns_result;
+					insert_ncall_log(hist_table,ncall_log);
 				}/* while(dao.rs().next()){...} */
-				/* set_report 을 입력합니다.
-				 * 		 
-				 * nr_stunix int unsigned not null default 0 comment "시작 유닉스타임",
-				 * nr_edunix int unsigned not null default 0 comment "종료 유닉스타임",
-				 * nr_success int unsigned not null default 0 comment "성공 갯수", 
-				 * nr_fail int unsigned not null default 0 comment "실패 갯수", 
-				 * nr_total int unsigned not null default 0 comment "전체 갯수", 
-				 * nr_datetime datetime not null default '1970-01-01 00:00:00' comment "로그기록일"
-				 * 
-				 * 		dao.pstmt().setInt(1, str[0]);     //nr_stunix
-						dao.pstmt().setLong(2, nr_end); //nr_edunix
-						dao.pstmt().setInt(3, str[1]);     //nr_success
-						dao.pstmt().setInt(4, str[2]);        //nr_fail
-						dao.pstmt().setInt(5, str[3]);        //nr_total
-				 *  */
 				ns_total=ns_success+ns_fail;
-				ncall_report[0]=toIntExact(nr_start);
-				ncall_report[1]=ns_success;
-				ncall_report[2]=ns_fail;
-				ncall_report[3]=ns_total;
-				
+				ncall_report[0]=toIntExact(nr_start); //nr_stunix
+				ncall_report[1]=ns_success;				//nr_success
+				ncall_report[2]=ns_fail;					//nr_fail
+				ncall_report[3]=ns_total; 					//nr_total
+
 				set_report(ncall_report);				
 			} catch (SQLException e) {
 				Utils.getLogger().warning(e.getMessage());
@@ -196,7 +187,7 @@ public class Ncall_cmd_queue {
 			nr_fail int unsigned not null default 0 comment "실패 갯수", 
 			nr_total int unsigned not null default 0 comment "전체 갯수", 
 			nr_datetime datetime not null default '1970-01-01 00:00:00' comment "로그기록일"
-		 * */
+		 **/
 		sb.append("INSERT INTO ncall_report SET ");
 		sb.append("nr_stunix=?, ");
 		sb.append("nr_edunix=?, ");
@@ -207,12 +198,12 @@ public class Ncall_cmd_queue {
 
 		try {
 			dao.openPstmt(sb.toString());
-			System.out.println(sb.toString());
-			dao.pstmt().setInt(1, toint[0]);     //nr_stunix
+			//System.out.println(sb.toString());
+			dao.pstmt().setInt(1, toint[0]);  //nr_stunix
 			dao.pstmt().setLong(2, nr_end); //nr_edunix
-			dao.pstmt().setInt(3, toint[1]);     //nr_success
-			dao.pstmt().setInt(4, toint[2]);        //nr_fail
-			dao.pstmt().setInt(5, toint[3]);        //nr_total
+			dao.pstmt().setInt(3, toint[1]);  //nr_success
+			dao.pstmt().setInt(4, toint[2]);  //nr_fail
+			dao.pstmt().setInt(5, toint[3]);  //nr_total
 			
 			/* 조회한 콜로그의 일 발송량 갱신 */
 			dao.pstmt().executeUpdate();
@@ -283,4 +274,44 @@ public class Ncall_cmd_queue {
 	  okPattern = Pattern.matches(regex, str);
 	  return okPattern;
 	 }
+	 
+	 /**
+	  *  set_hist
+	  * @param historytable
+	  * @return void
+	  */
+		private static void insert_ncall_log(String historytable,String[] str)
+	    {
+			StringBuilder sb = new StringBuilder();
+			MyDataObject dao = new MyDataObject();
+
+			sb.append("insert into "+historytable+" SET ");
+			sb.append("nl_unixtime=?,");
+			sb.append("ns_stno=?,");
+			sb.append("ns_tel=?,");
+			sb.append("ns_status=?,");
+			sb.append("nl_datetime=now()");
+			try {
+				dao.openPstmt(sb.toString());
+				dao.pstmt().setLong(1, System.currentTimeMillis()/1000);
+				dao.pstmt().setString(2, str[0]); //ns_stno
+				dao.pstmt().setString(3, str[1]); //ns_tel
+				dao.pstmt().setString(4, str[2]); //ns_status
+				/* 조회한 콜로그의 일 발송량 갱신 */
+				dao.pstmt().executeUpdate();
+							
+			} catch (SQLException e) {
+				Utils.getLogger().warning(e.getMessage());
+				DBConn.latest_warning = "ErrPOS027";
+				e.printStackTrace();
+			}
+			catch (Exception e) {
+				Utils.getLogger().warning(e.getMessage());
+				Utils.getLogger().warning(Utils.stack(e));
+				DBConn.latest_warning = "ErrPOS028";
+			}
+			finally {
+				dao.closePstmt();
+			}
+	    }	
 }
